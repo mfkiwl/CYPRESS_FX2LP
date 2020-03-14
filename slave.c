@@ -27,66 +27,32 @@ BYTE LED_FLAG;
 #define VR_NAKALL_OFF   0xD1
 #define VR_LED_ON   0xD2
 
-//-----------------------------------------------------------------------------
-// Task Dispatcher hooks
-//   The following hooks are called by the task dispatcher.
-//-----------------------------------------------------------------------------
-void TD_Init( void )
-{ 
-	// Called once at startup
+void stop_random_config(void)
+{
+	//This is an example code segment which resets the EP6 FIFO
+	//where EP6 has been configured as AUTOIN
+	//Note: Settings of other bits of EPxFIFOCFG are ignored here
 	
-  // CLKSPD[1:0]=10, for 48MHz operation, output CLKOUT
-  CPUCS = 0x12; 
-	
-	timer0_init();
+	FIFORESET = 0x80; // activate NAK-ALL to avoid race conditions
+	SYNCDELAY;
 
-  //配置FIFO标志输出，FLAG B配置为EP2 OUT FIFO空标志
-  PINFLAGSAB = 0x81;			// FLAGB - EP2EF
-  SYNCDELAY;
+	EP6FIFOCFG = 0x00; //switching to manual mode
+	SYNCDELAY;
 
-  //配置FIFO标志输出，FLAG C配置为EP6 IN FIFO满标志
-  PINFLAGSCD = 0x1E;			// FLAGC - EP6FF
-  SYNCDELAY;
+	FIFORESET = 0x06; // Reset FIFO 6
+	SYNCDELAY;
 
-  //配置FIFO标志输出，FLAG G配置为EP2 OUT FIFO空标志
-  PORTACFG |= 0x80;
+	EP6FIFOCFG = 0x0C; //switching to auto mode
+	SYNCDELAY;
 
-  SYNCDELAY;
-	
-	//Slave使用内部48MHz的时钟
-  IFCONFIG = 0xE3; //Internal clock, 48 MHz, Slave FIFO interface
-  SYNCDELAY;
- 
-	//将EP2断端点配置为BULK-OUT端点，使用4倍缓冲，512字节FIFO             
-  EP2CFG = 0xA0;                //out 512 bytes, 4x, bulk
-  SYNCDELAY;
-	//将EP6配置为BULK-OUT端点，                    
-  EP6CFG = 0xE0;                // in 512 bytes, 4x, bulk
-  SYNCDELAY;              
-  EP4CFG = 0x02;                //clear valid bit
-  SYNCDELAY;                     
-  EP8CFG = 0x02;                //clear valid bit
-  SYNCDELAY;   
+	FIFORESET = 0x00; //Release NAKALL
+	SYNCDELAY;
+}
 
-  //复位FIFO
-  SYNCDELAY;
-  FIFORESET = 0x80;             // activate NAK-ALL to avoid race conditions
-  SYNCDELAY;                    // see TRM section 15.14
-  FIFORESET = 0x02;             // reset, FIFO 2
-  SYNCDELAY;                     
-  FIFORESET = 0x04;             // reset, FIFO 4
-  SYNCDELAY;                     
-  FIFORESET = 0x06;             // reset, FIFO 6
-  SYNCDELAY;                     
-  FIFORESET = 0x08;             // reset, FIFO 8
-  SYNCDELAY;                     
-  FIFORESET = 0x00;             // deactivate NAK-ALL
-	SYNCDELAY; 
-
-
-  // handle the case where we were already in AUTO mode...
-  // ...for example: back to back firmware downloads...
-                     
+void send_random_config(void)
+{
+	// handle the case where we were already in AUTO mode...
+  // ...for example: back to back firmware downloads...                     
   EP2FIFOCFG = 0x00;            // AUTOOUT=0, WORDWIDE=1
 	SYNCDELAY;
   
@@ -96,12 +62,85 @@ void TD_Init( void )
 	
   EP6FIFOCFG = 0x0D;            // AUTOIN=1, ZEROLENIN=1, WORDWIDE=1
   SYNCDELAY;
+}
+//-----------------------------------------------------------------------------
+// Task Dispatcher hooks
+//   The following hooks are called by the task dispatcher.
+//-----------------------------------------------------------------------------
+void TD_Init( void )
+{ 
+	// Called once at startup
+  CPUCS = 0x12;// CLKSPD[1:0]=10, for 48MHz operation, output CLKOUT 
+	
+  IFCONFIG = 0xE3;   //Internal clock, 48 MHz, Slave FIFO interface
+  SYNCDELAY;
+	
+	REVCTL = 0x03;    // REVCTL.0 and REVCTL.1 set to 1
+  SYNCDELAY;
+	
+	EP2CFG = 0xA0;  //out 512 bytes,bulk_out, 4x,
+  SYNCDELAY;
+	
+  EP6CFG = 0xE0;    // sets EP6 valid for IN's
+	SYNCDELAY;				// and defines the endpoint for 512 byte packets, 4x buffered
+  
+  EP4CFG = 0x02;  //clear valid bit
+  SYNCDELAY;   
+	
+  EP8CFG = 0x02;  //clear valid bit
+  SYNCDELAY;  
+	
+	//reset all FIFOs
+  SYNCDELAY;
+  FIFORESET = 0x80;       // activate NAK-ALL to avoid race conditions
+  SYNCDELAY;              // see TRM section 15.14
+  FIFORESET = 0x82;       // reset, FIFO 2
+  SYNCDELAY;                     
+  FIFORESET = 0x84;       // reset, FIFO 4
+  SYNCDELAY;                     
+  FIFORESET = 0x86;       // reset, FIFO 6
+  SYNCDELAY;                     
+  FIFORESET = 0x88;       // reset, FIFO 8
+  SYNCDELAY;                     
+  FIFORESET = 0x00;       // deactivate NAK-ALL
+	SYNCDELAY;              // this defines the external interface to be the following:
+	
+	
+	// handle the case where we were already in AUTO mode...                
+  // core needs to see AUTOOUT=0 to AUTOOUT=1 switch to arm endp's                   
+  EP2FIFOCFG = 0x11;      // AUTOOUT=1, WORDWIDE=1  
+  SYNCDELAY; 
+	
+  EP6FIFOCFG = 0x0D;      // AUTOIN=1, ZEROLENIN=1, WORDWIDE=1
+  SYNCDELAY;
+		
+	
+  PINFLAGSAB = 0x81;			// defines FLAGA as prog-level flag, pointed to by FIFOADR[1:0]
+  SYNCDELAY;							// FLAGB as full flag, as pointed to by FIFOADR[1:0]
+
+  PINFLAGSCD = 0x1E;			// FLAGC as empty flag, as pointed to by FIFOADR[1:0]
+	SYNCDELAY;						  // won't generally need FLAGD
+
+	PORTACFG = 0x00;        // used PA7/FLAGD as a port pin, not as a FIFO flag
+	SYNCDELAY;
+	
+	FIFOPINPOLAR = 0x00; // set all slave FIFO interface pins as active low
+	SYNCDELAY;
+	EP6AUTOINLENH = 0x02; // EZ-USB automatically commits data in 512-byte chunks
+	SYNCDELAY;
+	EP6AUTOINLENL = 0x00;
+	SYNCDELAY;
+	
+	SYNCDELAY;
+	EP6FIFOPFH = 0x80; // you can define the programmable flag (FLAGA)
+	SYNCDELAY; 				 // to be active at the level you wish
+	EP6FIFOPFL = 0x00;
+	
+	timer0_init();
 	
 	PORTACFG = 0x00;		// port function
-	OEA = 0x03;					// PA4 is output
+	OEA = 0x03;					// PA is output
 	SYNCDELAY;
-//	IOA = 0x01;
-//	SYNCDELAY;
 
 	LED_FLAG = 1;
 }
@@ -109,7 +148,22 @@ void TD_Init( void )
 // Called repeatedly while the device is idle
 void TD_Poll( void )
 { 
-
+	if(LED_FLAG)
+	{
+		// master currently points to EP6, pins FIFOADR[1:0]=11
+		if( !( EP68FIFOFLGS & 0x01 ) )
+		{ 
+			// EP6FF = 0 when buffer available
+			INPKTEND = 0x86; // firmware skips EP6 packet
+											 // by writing 0x86 to INPKTEND
+	//		release_master( EP6 );
+		}
+		
+		INPKTEND = 0x86;
+		stop_random_config();
+		
+	}
+	
 }
 
 BOOL TD_Suspend( void )          
@@ -202,37 +256,17 @@ BOOL DR_VendorCmnd( void )
   switch (SETUPDAT[1])   
   {
      case VR_NAKALL_ON:   //0xD0
-			 
-			LED_FLAG = 1;
-		 
-//			IOA = 0x01;				// Green ON/Red flicker
-//			SYNCDELAY;
-	 
-			FIFORESET = 0x80; // activate NAK-ALL to avoid race conditions
-			SYNCDELAY;
-	 
-			EP6FIFOCFG = 0x00; //switching to manual mode
-			SYNCDELAY;
-	 
-			FIFORESET = 0x06; // Reset FIFO 2
-			SYNCDELAY;
-	 
-			OUTPKTEND = 0x86; //OUTPKTEND done twice as EP2 is double buffered by default
-			SYNCDELAY;
-	 
-			OUTPKTEND = 0x86;
-			SYNCDELAY;
-	 
-			EP6FIFOCFG = 0x10; //switching to auto mode
-			SYNCDELAY;
-	 
-			FIFORESET = 0x00; //Release NAKALL
-			SYNCDELAY;
-		
+		 {
+//				stop_random_config(); 
+				LED_FLAG = 1;	 
+		 }
         break;
      case VR_NAKALL_OFF:   //0xD1
-				TD_Init();		 
+		 {
+				TD_Init();	
+//				send_random_config();		 
 				LED_FLAG = 0;
+		 }
         break;
      default:
         return(TRUE);
