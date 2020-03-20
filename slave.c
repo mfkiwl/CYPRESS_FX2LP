@@ -42,7 +42,7 @@ void stop_random_config(void)
 	FIFORESET = 0x06; // Reset FIFO 6
 	SYNCDELAY;
 
-	EP6FIFOCFG = 0x0C; //switching to auto mode
+	EP6FIFOCFG = 0x0D; //switching to auto mode
 	SYNCDELAY;
 
 	FIFORESET = 0x00; //Release NAKALL
@@ -108,7 +108,7 @@ void TD_Init( void )
 	
 	// handle the case where we were already in AUTO mode...                
   // core needs to see AUTOOUT=0 to AUTOOUT=1 switch to arm endp's                   
-  EP2FIFOCFG = 0x11;      // AUTOOUT=1, WORDWIDE=1  
+  EP2FIFOCFG = 0x11;      // AUTOOUT=1, WORDWIDE=1, WORDWIDE=1 
   SYNCDELAY; 
 	
   EP6FIFOCFG = 0x0D;      // AUTOIN=1, ZEROLENIN=1, WORDWIDE=1
@@ -124,17 +124,18 @@ void TD_Init( void )
 	PORTACFG = 0x00;        // used PA7/FLAGD as a port pin, not as a FIFO flag
 	SYNCDELAY;
 	
-	FIFOPINPOLAR = 0x00; // set all slave FIFO interface pins as active low
+//	FIFOPINPOLAR = 0x00; 		// set all slave FIFO interface pins as active low
+//	SYNCDELAY;
+	
+	EP6AUTOINLENH = 0x02; 	// EZ-USB automatically commits data in 512-byte chunks
 	SYNCDELAY;
-	EP6AUTOINLENH = 0x02; // EZ-USB automatically commits data in 512-byte chunks
-	SYNCDELAY;
-	EP6AUTOINLENL = 0x00;
+	EP6AUTOINLENL = 0x00; 
 	SYNCDELAY;
 	
-	SYNCDELAY;
 	EP6FIFOPFH = 0x80; // you can define the programmable flag (FLAGA)
 	SYNCDELAY; 				 // to be active at the level you wish
 	EP6FIFOPFL = 0x00;
+	SYNCDELAY;
 	
 	timer0_init();
 	
@@ -156,11 +157,11 @@ void TD_Poll( void )
 			// EP6FF = 0 when buffer available
 			INPKTEND = 0x86; // firmware skips EP6 packet
 											 // by writing 0x86 to INPKTEND
-	//		release_master( EP6 );
 		}
 		
-		INPKTEND = 0x86;
-		stop_random_config();
+		INPKTEND = 0x86;   // firmware skips EP6 packet
+											 // by writing 0x86 to INPKTEND
+		stop_random_config(); //see TRM P117 9.3.9
 		
 	}
 	
@@ -257,14 +258,12 @@ BOOL DR_VendorCmnd( void )
   {
      case VR_NAKALL_ON:   //0xD0
 		 {
-//				stop_random_config(); 
 				LED_FLAG = 1;	 
 		 }
         break;
      case VR_NAKALL_OFF:   //0xD1
 		 {
-				TD_Init();	
-//				send_random_config();		 
+//				TD_Init();		 
 				LED_FLAG = 0;
 		 }
         break;
